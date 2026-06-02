@@ -145,13 +145,17 @@
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
 
-  const VH = 200;
-  let VW = 360;
-  let GROUND_Y = VH - 26;
+  let VH = 480;
+  let VW = 240;
+  let GROUND_Y = Math.round(VH * 0.80);
 
+  // Width-driven scaling: keep a generous horizontal field of view in portrait,
+  // derive height from the real screen aspect so nothing is stretched/zoomed.
   function resize() {
-    const w = window.innerWidth, h = window.innerHeight;
-    VW = Math.max(220, Math.round(VH * (w / h)));
+    const w = window.innerWidth, h = window.innerHeight, ar = w / h;
+    VW = 240; VH = Math.round(VW / ar);
+    if (VH < 320) { VH = 320; VW = Math.round(VH * ar); }   // landscape/desktop fallback
+    GROUND_Y = Math.round(VH * 0.80);
     canvas.width = VW; canvas.height = VH;
     ctx.imageSmoothingEnabled = false;
     buildStars();
@@ -170,29 +174,34 @@
     g: "#ffd23d", h: "#fff3a0", e: "#b9780a",
   };
 
+  // Astronaut: 14 wide x 18 tall, clearer helmet/visor/backpack/limbs
   const ASTRO_RUN_A = [
-    "....wwww....", "..wwwwwwww..", ".wwwwwwwwww.", ".wwvvvvvvww.",
-    ".wvvddddvvw.", ".wvvddddvvw.", ".wwvvvvvvww.", ".wwwwwwwwww.",
-    "ppwwwoowwwpp", "ppwwwwwwwwpp", "ppwwwwwwwwpp", ".wwwwwwwwww.",
-    ".www....www.", ".www....www.", ".ww......ww.", ".ooo....ooo.",
+    "....wwwwww....", "...wwwwwwww...", "..wwwwwwwwww..", "..wwvvvvvvww..",
+    "..wvvddddvvw..", "..wvvddddvvw..", "..wwvvvvvvww..", "..wwwwwwwwww..",
+    ".pwwwwwwwwwwp.", "ppwwwoooowwwpp", "ppwwwwwwwwwwpp", ".pwwwwwwwwwwp.",
+    "..wwwwwwwwww..", "..www....www..", "..www....www..", "..ww......ww..",
+    "..ww......ww..", "..ooo....ooo..",
   ];
   const ASTRO_RUN_B = [
-    "....wwww....", "..wwwwwwww..", ".wwwwwwwwww.", ".wwvvvvvvww.",
-    ".wvvddddvvw.", ".wvvddddvvw.", ".wwvvvvvvww.", ".wwwwwwwwww.",
-    "ppwwwoowwwpp", "ppwwwwwwwwpp", "ppwwwwwwwwpp", ".wwwwwwwwww.",
-    "..wwwwwwww..", "..www..www..", "...ww..ww...", "..ooo..ooo..",
+    "....wwwwww....", "...wwwwwwww...", "..wwwwwwwwww..", "..wwvvvvvvww..",
+    "..wvvddddvvw..", "..wvvddddvvw..", "..wwvvvvvvww..", "..wwwwwwwwww..",
+    ".pwwwwwwwwwwp.", "ppwwwoooowwwpp", "ppwwwwwwwwwwpp", ".pwwwwwwwwwwp.",
+    "..wwwwwwwwww..", "..www....www..", "..www....www..", "...ww....ww...",
+    "...ww....ww...", "..ooo....ooo..",
   ];
   const ASTRO_JUMP = [
-    "....wwww....", "..wwwwwwww..", ".wwwwwwwwww.", ".wwvvvvvvww.",
-    ".wvvddddvvw.", ".wvvddddvvw.", ".wwvvvvvvww.", ".wwwwwwwwww.",
-    "ppwwwoowwwpp", "ppwwwwwwwwpp", "ppwwwwwwwwpp", ".wwwwwwwwww.",
-    ".wwwwwwwwww.", ".www....www.", "..ww....ww..", "..oo....oo..",
+    "....wwwwww....", "...wwwwwwww...", "..wwwwwwwwww..", "..wwvvvvvvww..",
+    "..wvvddddvvw..", "..wvvddddvvw..", "..wwvvvvvvww..", "..wwwwwwwwww..",
+    "ppwwwwwwwwwwpp", "ppwwwoooowwwpp", "ppwwwwwwwwwwpp", ".pwwwwwwwwwwp.",
+    "..wwwwwwwwww..", "..wwwwwwwwww..", "..www....www..", "...ww....ww...",
+    "..ooo....ooo..", "..............",
   ];
   const ASTRO_DUCK = [
-    "............", "............", "............", "....wwww....",
-    "..wwwwwwww..", ".wwvvvvvwwp.", ".wvvdddvwpp.", ".wwvvvvwwpp.",
-    "ppwwwoowwww.", "ppwwwwwwwww.", ".wwwwwwwwww.", ".wwwwwwwwww.",
-    "............", ".ww.ww.ww...", ".ww.ww.ww...", "ooo.ooo.....",
+    "..............", "..............", "..............", "..............",
+    "..............", "....wwwwww....", "...wwwwwwww...", "..wwvvvvvvww..",
+    "..wvvddddvvw..", "..wwvvvvvvww..", ".pwwwwwwwwwwp.", "ppwwwoooowwwpp",
+    "ppwwwwwwwwwwpp", ".wwwwwwwwwwww.", ".ww..ww..ww...", "ooo...ooo.....",
+    "..............", "..............",
   ];
   const ASTEROID = [
     "..aaaa..", ".aacbaa.", "aacccbaa", "acccccca",
@@ -294,7 +303,7 @@
       const layer = i % 3;
       stars.push({ x: Math.random() * VW, y: Math.random() * (GROUND_Y - 6), layer, size: layer === 2 ? 2 : 1, tw: Math.random() * Math.PI * 2 });
     }
-    planet = { x: VW * 0.72, y: VH * 0.26, r: Math.max(16, VH * 0.13) };
+    planet = { x: VW * 0.72, y: VH * 0.2, r: Math.max(14, VH * 0.085) };
   }
 
   function drawBackground(wspeed, dt, t) {
@@ -341,15 +350,16 @@
   // Player
   // ---------------------------------------------------------------------------
   const CELL = 2;
-  const player = { x: 38, y: 0, vy: 0, w: 12 * CELL, h: 16 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0, hover: false };
-  const GRAV = 980, JUMP_V = 330, CUT = 0.42;
+  const player = { x: 40, y: 0, vy: 0, w: 14 * CELL, h: 18 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0, hover: false };
+  // A clean fixed jump (no charge-up); hold engages a simple hover.
+  const GRAV = 1150, JUMP_V = 560;
   // Jetpack hover + fuel
-  const MAX_FUEL = 100;
-  const HOVER_ACC = GRAV * 1.25;   // upward thrust while hovering
-  const HOVER_VMAX = 120;          // max rise speed while hovering
-  const HOVER_DRAIN = 46;          // fuel/sec while hovering
-  const REGEN_GROUND = 64;         // fuel/sec refill on ground
-  const REGEN_AIR = 16;            // fuel/sec refill while airborne (not hovering)
+  const MAX_FUEL = 140;
+  const HOVER_ACC = GRAV * 1.18;   // gentle sustained lift while holding
+  const HOVER_VMAX = 150;          // max rise speed while hovering
+  const HOVER_DRAIN = 38;          // fuel/sec while hovering
+  const REGEN_GROUND = 72;         // fuel/sec refill on ground
+  const REGEN_AIR = 24;            // fuel/sec refill while airborne (not hovering)
 
   function resetPlayer() {
     player.y = GROUND_Y - player.h; player.vy = 0;
@@ -357,10 +367,10 @@
   }
   function playerHitbox() {
     if (player.ducking && player.onGround) {
-      const h = 9 * CELL;
-      return { x: player.x + 3, y: GROUND_Y - h + 2, w: player.w - 6, h: h - 2 };
+      const top = GROUND_Y - 13 * CELL;        // crouched profile
+      return { x: player.x + 4, y: top, w: player.w - 8, h: (GROUND_Y - top) - 2 };
     }
-    return { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 5 };
+    return { x: player.x + 4, y: player.y + 4, w: player.w - 8, h: player.h - 6 };
   }
 
   // ---------------------------------------------------------------------------
@@ -377,10 +387,10 @@
   const WEAPON_KINDS = ["blaster", "plasma"];
 
   function spawnObstacle() {
-    const flying = Math.random() < 0.30 && score > 120;
+    const flying = Math.random() < 0.30 && score > 200;
     if (flying) {
       const cell = 2, sz = spriteSize(SATELLITE, cell);
-      obstacles.push({ type: "sat", sprite: SATELLITE, cell, x: VW + 8, y: GROUND_Y - player.h - 4, w: sz.w, h: sz.h, bob: Math.random() * 6, minGap: Infinity, counted: false, hit: false, hp: 2 });
+      obstacles.push({ type: "sat", sprite: SATELLITE, cell, x: VW + 8, y: GROUND_Y - player.h - 7, w: sz.w, h: sz.h, bob: Math.random() * 6, minGap: Infinity, counted: false, hit: false, hp: 2 });
     } else {
       const cell = Math.random() < 0.45 ? 3 : (Math.random() < 0.7 ? 4 : 5);
       const sz = spriteSize(ASTEROID, cell);
@@ -512,13 +522,13 @@
 
   function startGame() {
     state = STATE.PLAY;
-    score = 0; displayScore = 0; milestone = 0; speed = 96;
+    score = 0; displayScore = 0; milestone = 0; speed = 115;
     combo = 0; comboTimer = 0;
     shieldActive = false; slowTimer = 0; djumpTimer = 0; invulnTimer = 0;
     fuel = MAX_FUEL; weapon = null; fireCd = 0;
     biomeIndex = 0; curHue = BIOMES[0].hue;
     obstacles = []; coins = []; powerups = []; weaponups = []; projectiles = []; particles = []; floatTexts = [];
-    spawnTimer = 0.6; coinTimer = 1.6; powerTimer = 9 + Math.random() * 6; weaponTimer = 7 + Math.random() * 6;
+    spawnTimer = 1.6; coinTimer = 2.0; powerTimer = 10 + Math.random() * 6; weaponTimer = 9 + Math.random() * 6;
     resetPlayer();
     el.start.classList.add("hidden"); el.over.classList.add("hidden");
     el.banner.classList.add("hidden");
@@ -692,8 +702,8 @@
     const timeScale = slowTimer > 0 ? 0.5 : 1;
     const wspeed = speed * timeScale;
 
-    speed += dt * 5.2;
-    score += wspeed * dt * 0.06;
+    speed += dt * 3.6;
+    score += wspeed * dt * 0.05;
 
     // biome shift every 500
     const bi = Math.floor(score / 500) % BIOMES.length;
@@ -711,7 +721,6 @@
       if (Math.random() < 0.9) burst(player.x + player.w * 0.5, player.y + player.h, 1, Math.random() < 0.5 ? "#23e0ff" : "#ff7a2d", 0.7, -55);
     }
     player.vy += GRAV * dt;
-    if (player.vy < 0 && !holding) player.vy += GRAV * CUT * dt;   // quick tap = small hop
     player.y += player.vy * dt;
     if (player.y >= GROUND_Y - player.h) {
       if (!player.onGround) burst(player.x + player.w / 2, GROUND_Y, 8, "#7b8090", Math.PI * 0.7, -10);
@@ -722,7 +731,7 @@
 
     // spawns (real dt so slow-mo doesn't choke spawning)
     spawnTimer -= dt;
-    if (spawnTimer <= 0) { spawnObstacle(); spawnTimer = Math.max(0.62, 1.5 - speed * 0.004) + Math.random() * 0.7; }
+    if (spawnTimer <= 0) { spawnObstacle(); spawnTimer = Math.max(0.85, 1.8 - speed * 0.0028) + Math.random() * 0.9; }
     coinTimer -= dt;
     if (coinTimer <= 0) { spawnCoins(); coinTimer = 1.8 + Math.random() * 2.6; }
     powerTimer -= dt;
@@ -861,7 +870,7 @@
     // player
     const spr = currentSprite();
     const ovr = skinOverride(currentSkin());
-    const drawY = (player.ducking && player.onGround) ? GROUND_Y - 16 * CELL : player.y;
+    const drawY = player.y;
     // jetpack hover flame
     if (player.hover) {
       const fx = player.x + player.w / 2;
