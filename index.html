@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#070a18" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Cosmic Dash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+<style>
+  :root { --ink: #eaf2ff; --glow: #23e0ff; --accent: #ff7a2d; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #070a18; color: var(--ink);
+    font-family: 'Press Start 2P', monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none; overscroll-behavior: none;
+  }
+  #stage { position: fixed; inset: 0; }
+  /* Low-res buffer scaled up = crunchy pixel art */
+  #game {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  /* Retro CRT scanlines + vignette overlay (pure decoration) */
+  #crt {
+    position: absolute; inset: 0; pointer-events: none; z-index: 5;
+    background:
+      repeating-linear-gradient(rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.10) 2px 3px),
+      radial-gradient(120% 120% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
+    mix-blend-mode: multiply;
+  }
+  #ui { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+
+  .hud {
+    position: absolute; top: env(safe-area-inset-top, 0px); left: 0; right: 0;
+    display: flex; justify-content: space-between;
+    padding: 14px 16px;
+    font-size: 12px; letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(35,224,255,0.55), 2px 2px 0 #000;
+  }
+  .hud .hi { color: var(--glow); }
+  .hud .sc { color: #fff; }
+
+  #mute {
+    position: absolute; top: env(safe-area-inset-top, 0px); right: 8px;
+    margin-top: 40px;
+    pointer-events: auto;
+    background: rgba(10,16,34,0.7);
+    color: var(--ink); border: 2px solid var(--glow);
+    font-family: inherit; font-size: 12px; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer;
+    text-shadow: 1px 1px 0 #000; box-shadow: 0 0 10px rgba(35,224,255,0.35);
+  }
+  #mute:active { transform: translateY(1px); }
+
+  .panel {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 18px; padding: 24px;
+    background: radial-gradient(120% 120% at 50% 35%, rgba(7,10,24,0.15), rgba(7,10,24,0.8));
+  }
+  .panel.hidden { display: none; }
+  .title {
+    font-size: clamp(20px, 7vw, 44px);
+    line-height: 1.5; color: #fff;
+    text-shadow: 0 0 10px var(--glow), 4px 4px 0 var(--accent), 6px 6px 0 #2a0f44;
+    animation: float 2.4s ease-in-out infinite;
+  }
+  .subtitle { font-size: clamp(8px, 2.6vw, 12px); color: var(--glow); line-height: 1.9; }
+  .hint {
+    font-size: clamp(8px, 2.6vw, 12px); color: var(--ink); line-height: 1.9;
+    opacity: 0.92;
+  }
+  .blink { animation: blink 1s steps(2, start) infinite; }
+  .big { font-size: clamp(16px, 5vw, 28px); color: var(--accent); text-shadow: 3px 3px 0 #000; }
+  .new { color: #ffe14d; text-shadow: 0 0 8px #ffb300, 2px 2px 0 #000; }
+
+  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+  .astro-emoji { font-size: clamp(34px, 11vw, 70px); animation: float 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="crt"></div>
+    <div id="ui">
+      <div class="hud">
+        <span class="sc">SCORE <span id="score">0</span></span>
+        <span class="hi">HI <span id="hiscore">0</span></span>
+      </div>
+      <button id="mute" aria-label="toggle sound">SND ON</button>
+
+      <div id="startPanel" class="panel">
+        <div class="astro-emoji">👨‍🚀</div>
+        <div class="title">COSMIC<br/>DASH</div>
+        <div class="subtitle">JUMP THE ASTEROIDS<br/>DUCK THE SATELLITES</div>
+        <div class="hint blink">TAP TO START</div>
+        <div class="hint" style="opacity:.6">HOLD = HIGHER JUMP · SWIPE DOWN = DUCK</div>
+      </div>
+
+      <div id="overPanel" class="panel hidden">
+        <div class="big">GAME OVER</div>
+        <div class="hint">SCORE <span id="finalScore">0</span></div>
+        <div class="hint hi">BEST <span id="finalHi">0</span></div>
+        <div id="newBadge" class="hint new hidden">★ NEW RECORD ★</div>
+        <div class="hint blink">TAP TO RETRY</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // Canvas / low-res pixel buffer
+  // ---------------------------------------------------------------------------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
+  const VH = 200;            // virtual buffer height (game logic units)
+  let VW = 360;              // virtual width, derived from screen aspect on resize
+  let GROUND_Y = VH - 26;    // top of the ground surface
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    VW = Math.max(220, Math.round(VH * (w / h)));
+    canvas.width = VW;
+    canvas.height = VH;
+    ctx.imageSmoothingEnabled = false;
+    buildStars();
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", () => setTimeout(resize, 200));
+
+  // ---------------------------------------------------------------------------
+  // Pixel-art sprites (each char = 1 pixel cell, drawn at CELL virtual px)
+  // ---------------------------------------------------------------------------
+  const PAL = {
+    w: "#eef3ff", s: "#aeb8d4", v: "#23e0ff", d: "#06263f",
+    o: "#ff7a2d", p: "#b9c2d8",
+    a: "#7b8090", b: "#565b69", c: "#9aa1b2",   // asteroid greys
+    m: "#c7ccd8", k: "#5b6072", y: "#3a6ea5", q: "#ffd23d", // satellite
+  };
+
+  const ASTRO_RUN_A = [
+    "....wwww....",
+    "..wwwwwwww..",
+    ".wwwwwwwwww.",
+    ".wwvvvvvvww.",
+    ".wvvddddvvw.",
+    ".wvvddddvvw.",
+    ".wwvvvvvvww.",
+    ".wwwwwwwwww.",
+    "ppwwwoowwwpp",
+    "ppwwwwwwwwpp",
+    "ppwwwwwwwwpp",
+    ".wwwwwwwwww.",
+    ".www....www.",
+    ".www....www.",
+    ".ww......ww.",
+    ".ooo....ooo.",
+  ];
+  const ASTRO_RUN_B = [
+    "....wwww....",
+    "..wwwwwwww..",
+    ".wwwwwwwwww.",
+    ".wwvvvvvvww.",
+    ".wvvddddvvw.",
+    ".wvvddddvvw.",
+    ".wwvvvvvvww.",
+    ".wwwwwwwwww.",
+    "ppwwwoowwwpp",
+    "ppwwwwwwwwpp",
+    "ppwwwwwwwwpp",
+    ".wwwwwwwwww.",
+    "..wwwwwwww..",
+    "..www..www..",
+    "...ww..ww...",
+    "..ooo..ooo..",
+  ];
+  const ASTRO_JUMP = [
+    "....wwww....",
+    "..wwwwwwww..",
+    ".wwwwwwwwww.",
+    ".wwvvvvvvww.",
+    ".wvvddddvvw.",
+    ".wvvddddvvw.",
+    ".wwvvvvvvww.",
+    ".wwwwwwwwww.",
+    "ppwwwoowwwpp",
+    "ppwwwwwwwwpp",
+    "ppwwwwwwwwpp",
+    ".wwwwwwwwww.",
+    ".wwwwwwwwww.",
+    ".www....www.",
+    "..ww....ww..",
+    "..oo....oo..",
+  ];
+  // Crouched / ducking astronaut (shorter, leaning forward)
+  const ASTRO_DUCK = [
+    "............",
+    "............",
+    "............",
+    "....wwww....",
+    "..wwwwwwww..",
+    ".wwvvvvvwwp.",
+    ".wvvdddvwpp.",
+    ".wwvvvvwwpp.",
+    "ppwwwoowwww.",
+    "ppwwwwwwwww.",
+    ".wwwwwwwwww.",
+    ".wwwwwwwwww.",
+    "............",
+    ".ww.ww.ww...",
+    ".ww.ww.ww...",
+    "ooo.ooo.....",
+  ];
+
+  const ASTEROID = [
+    "..aaaa..",
+    ".aacbaa.",
+    "aacccbaa",
+    "acccccca",
+    "acbcccca",
+    "aacccbaa",
+    ".aaccaa.",
+    "..aaaa..",
+  ];
+  const SATELLITE = [
+    "...m....m...",
+    "...m....m...",
+    "yyyymmmmyyyy",
+    "yyyymqqmyyyy",
+    "yyyymqqmyyyy",
+    "yyyymmmmyyyy",
+    "...m....m...",
+    "...m....m...",
+  ];
+
+  function spriteSize(sprite, cell) {
+    return { w: sprite[0].length * cell, h: sprite.length * cell };
+  }
+  function drawSprite(sprite, x, y, cell) {
+    x = Math.round(x); y = Math.round(y);
+    for (let r = 0; r < sprite.length; r++) {
+      const row = sprite[r];
+      for (let c = 0; c < row.length; c++) {
+        const ch = row[c];
+        if (ch === ".") continue;
+        const col = PAL[ch];
+        if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(x + c * cell, y + r * cell, cell, cell);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Background: parallax starfield + drifting planet + nebula
+  // ---------------------------------------------------------------------------
+  let stars = [];
+  let planet = { x: 0, y: 0, r: 0 };
+  function buildStars() {
+    stars = [];
+    const count = Math.round(VW / 4);
+    for (let i = 0; i < count; i++) {
+      const layer = i % 3; // 0 far .. 2 near
+      stars.push({
+        x: Math.random() * VW,
+        y: Math.random() * (GROUND_Y - 6),
+        layer,
+        size: layer === 2 ? 2 : 1,
+        tw: Math.random() * Math.PI * 2,
+      });
+    }
+    planet = { x: VW * 0.72, y: VH * 0.26, r: Math.max(16, VH * 0.13) };
+  }
+
+  function drawBackground(dt, t) {
+    // Nebula gradient with slow hue drift
+    const hue = 230 + Math.sin(t * 0.05) * 18;
+    const g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, `hsl(${hue}, 60%, 7%)`);
+    g.addColorStop(0.55, `hsl(${hue - 18}, 55%, 10%)`);
+    g.addColorStop(1, `hsl(${hue + 14}, 45%, 5%)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Soft nebula blobs
+    const blob = ctx.createRadialGradient(VW * 0.3, VH * 0.5, 0, VW * 0.3, VH * 0.5, VW * 0.5);
+    blob.addColorStop(0, `hsla(${hue + 40}, 80%, 50%, 0.10)`);
+    blob.addColorStop(1, "hsla(0,0%,0%,0)");
+    ctx.fillStyle = blob;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Drifting planet (parallax, slow)
+    planet.x -= speed * 0.06 * dt;
+    if (planet.x < -planet.r * 2) planet.x = VW + planet.r;
+    drawPlanet(planet.x, planet.y, planet.r, t);
+
+    // Stars
+    const speeds = [6, 14, 26];
+    for (const st of stars) {
+      st.x -= (speed * 0.04 + speeds[st.layer] * 0.04) * dt * (st.layer + 1);
+      if (st.x < 0) { st.x += VW; st.y = Math.random() * (GROUND_Y - 6); }
+      st.tw += dt * (2 + st.layer);
+      const tw = 0.55 + 0.45 * Math.sin(st.tw);
+      const shade = st.layer === 0 ? 130 : st.layer === 1 ? 190 : 255;
+      ctx.fillStyle = `rgba(${shade},${shade},255,${tw.toFixed(2)})`;
+      ctx.fillRect(Math.round(st.x), Math.round(st.y), st.size, st.size);
+    }
+  }
+
+  function drawPlanet(cx, cy, r, t) {
+    cx = Math.round(cx); cy = Math.round(cy);
+    // body
+    const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.2, cx, cy, r);
+    g.addColorStop(0, "#ff9d57");
+    g.addColorStop(0.6, "#c8512e");
+    g.addColorStop(1, "#5e1f1a");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    // ring
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.5);
+    ctx.scale(1, 0.32);
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.strokeStyle = "rgba(255,210,150,0.55)";
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Player
+  // ---------------------------------------------------------------------------
+  const CELL = 2;                       // sprite pixel = 2 virtual px
+  const player = {
+    x: 38, y: 0, vy: 0,
+    w: 12 * CELL, h: 16 * CELL,
+    onGround: true, ducking: false,
+    runT: 0,
+  };
+  const GRAV = 980;        // virtual px / s^2
+  const JUMP_V = 330;      // initial jump velocity
+  const CUT = 0.42;        // jump-cut factor when released early
+
+  function resetPlayer() {
+    player.y = GROUND_Y - player.h;
+    player.vy = 0; player.onGround = true; player.ducking = false; player.runT = 0;
+  }
+
+  function playerHitbox() {
+    // forgiving hitbox, smaller when ducking
+    if (player.ducking) {
+      const h = 9 * CELL;
+      return { x: player.x + 3, y: GROUND_Y - h + 2, w: player.w - 6, h: h - 2 };
+    }
+    return { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 5 };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Obstacles + particles
+  // ---------------------------------------------------------------------------
+  let obstacles = [];
+  let particles = [];
+  let spawnTimer = 0;
+
+  function spawnObstacle() {
+    const flying = Math.random() < 0.30 && score > 120;
+    if (flying) {
+      const cell = 2;
+      const sz = spriteSize(SATELLITE, cell);
+      // hover at duck-height so player must duck/slide
+      const y = GROUND_Y - player.h - 4;
+      obstacles.push({ type: "sat", sprite: SATELLITE, cell, x: VW + 8, y, w: sz.w, h: sz.h, bob: Math.random() * 6 });
+    } else {
+      const cell = Math.random() < 0.45 ? 3 : (Math.random() < 0.7 ? 4 : 5);
+      const sz = spriteSize(ASTEROID, cell);
+      obstacles.push({ type: "rock", sprite: ASTEROID, cell, x: VW + 8, y: GROUND_Y - sz.h, w: sz.w, h: sz.h, bob: 0 });
+    }
+  }
+
+  function burst(x, y, n, color, spread, up) {
+    for (let i = 0; i < n; i++) {
+      const a = (Math.random() - 0.5) * spread;
+      const sp = 30 + Math.random() * 70;
+      particles.push({
+        x, y, vx: Math.cos(a) * sp - 20, vy: Math.sin(a) * sp - (up || 0),
+        life: 0.4 + Math.random() * 0.4, t: 0, color, size: Math.random() < 0.5 ? 1 : 2,
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ground
+  // ---------------------------------------------------------------------------
+  let groundScroll = 0;
+  function drawGround() {
+    ctx.fillStyle = "#11162b";
+    ctx.fillRect(0, GROUND_Y, VW, VH - GROUND_Y);
+    // top surface line
+    ctx.fillStyle = "#2a3358";
+    ctx.fillRect(0, GROUND_Y, VW, 2);
+    ctx.fillStyle = "#3d6bff";
+    ctx.fillRect(0, GROUND_Y, VW, 1);
+    // moving surface texture dashes
+    groundScroll = (groundScroll - speed * 0.016) % 16;
+    ctx.fillStyle = "#1c2b4a";
+    for (let x = groundScroll; x < VW; x += 16) {
+      ctx.fillRect(Math.round(x), GROUND_Y + 8, 6, 2);
+      ctx.fillRect(Math.round(x + 8), GROUND_Y + 14, 4, 2);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sound (tiny Web Audio blips)
+  // ---------------------------------------------------------------------------
+  let audioCtx = null, muted = false;
+  function beep(freq, dur, type, vol) {
+    if (muted) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type || "square"; o.frequency.value = freq;
+      g.gain.value = vol || 0.05;
+      o.connect(g); g.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.start(now); o.stop(now + dur);
+    } catch (e) { /* ignore */ }
+  }
+  const sJump = () => beep(520, 0.12, "square", 0.05);
+  const sCrash = () => { beep(140, 0.3, "sawtooth", 0.08); beep(90, 0.4, "square", 0.06); };
+  const sPoint = () => beep(880, 0.08, "square", 0.04);
+
+  // ---------------------------------------------------------------------------
+  // Game state
+  // ---------------------------------------------------------------------------
+  const STATE = { START: 0, PLAY: 1, OVER: 2 };
+  let state = STATE.START;
+  let score = 0, displayScore = 0, milestone = 0;
+  let speed = 96;            // base scroll speed (virtual px/s)
+  let highScore = +(localStorage.getItem("cosmicDashHigh") || 0);
+
+  const el = {
+    score: document.getElementById("score"),
+    hi: document.getElementById("hiscore"),
+    start: document.getElementById("startPanel"),
+    over: document.getElementById("overPanel"),
+    final: document.getElementById("finalScore"),
+    finalHi: document.getElementById("finalHi"),
+    newBadge: document.getElementById("newBadge"),
+    mute: document.getElementById("mute"),
+  };
+  el.hi.textContent = highScore;
+
+  function startGame() {
+    state = STATE.PLAY;
+    score = 0; displayScore = 0; milestone = 0; speed = 96;
+    obstacles = []; particles = []; spawnTimer = 0.6;
+    resetPlayer();
+    el.start.classList.add("hidden");
+    el.over.classList.add("hidden");
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+
+  function gameOver() {
+    state = STATE.OVER;
+    sCrash();
+    const hb = playerHitbox();
+    burst(hb.x + hb.w / 2, hb.y + hb.h / 2, 26, "#ff7a2d", Math.PI * 2, 0);
+    burst(hb.x + hb.w / 2, hb.y + hb.h / 2, 18, "#23e0ff", Math.PI * 2, 0);
+    const final = Math.floor(score);
+    const isNew = final > highScore;
+    if (isNew) { highScore = final; localStorage.setItem("cosmicDashHigh", String(highScore)); }
+    el.final.textContent = final;
+    el.finalHi.textContent = highScore;
+    el.hi.textContent = highScore;
+    el.newBadge.classList.toggle("hidden", !isNew);
+    el.over.classList.remove("hidden");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------------------
+  let holding = false;
+  function doJump() {
+    if (player.onGround) {
+      player.vy = -JUMP_V;
+      player.onGround = false;
+      player.ducking = false;
+      sJump();
+      const hb = playerHitbox();
+      burst(player.x + player.w / 2, GROUND_Y, 10, "#23e0ff", Math.PI * 0.8, -30);
+    }
+  }
+  function pressDown() {
+    if (state === STATE.PLAY && !player.onGround) {
+      // fast-fall when airborne
+      player.vy += 120;
+    }
+    player.ducking = player.onGround;
+  }
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    if (state === STATE.START) { startGame(); return; }
+    if (state === STATE.OVER) {
+      // small debounce so the crash tap doesn't instantly restart
+      if (performance.now() - overAt > 350) startGame();
+      return;
+    }
+    holding = true;
+    touchStartY = (e.touches ? e.touches[0].clientY : e.clientY);
+    swiped = false;
+    doJump();
+  }
+  let touchStartY = 0, swiped = false, overAt = 0;
+  function onPointerMove(e) {
+    if (state !== STATE.PLAY) return;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY);
+    if (!swiped && y - touchStartY > 36) { swiped = true; pressDown(); }
+  }
+  function onPointerUp() { holding = false; player.ducking = false; }
+
+  const stage = document.getElementById("stage");
+  stage.addEventListener("touchstart", onPointerDown, { passive: false });
+  stage.addEventListener("touchmove", onPointerMove, { passive: false });
+  stage.addEventListener("touchend", onPointerUp);
+  stage.addEventListener("mousedown", onPointerDown);
+  stage.addEventListener("mousemove", (e) => { if (holding) onPointerMove(e); });
+  window.addEventListener("mouseup", onPointerUp);
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+      e.preventDefault();
+      if (state === STATE.START) return startGame();
+      if (state === STATE.OVER) return startGame();
+      holding = true; doJump();
+    } else if (e.code === "ArrowDown" || e.code === "KeyS") {
+      e.preventDefault();
+      if (state === STATE.PLAY) pressDown();
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") holding = false;
+    if (e.code === "ArrowDown" || e.code === "KeyS") player.ducking = false;
+  });
+
+  el.mute.addEventListener("click", (e) => {
+    e.stopPropagation();
+    muted = !muted;
+    el.mute.textContent = muted ? "SND OFF" : "SND ON";
+  });
+  // keep the mute button from also triggering the stage tap
+  el.mute.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
+  el.mute.addEventListener("mousedown", (e) => e.stopPropagation());
+
+  // ---------------------------------------------------------------------------
+  // Collision
+  // ---------------------------------------------------------------------------
+  function overlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Update + render loop
+  // ---------------------------------------------------------------------------
+  let last = performance.now(), tElapsed = 0;
+  function frame(now) {
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.05) dt = 0.05;     // clamp big gaps (tab switch)
+    tElapsed += dt;
+
+    if (state === STATE.PLAY) update(dt);
+    render(dt, tElapsed);
+    requestAnimationFrame(frame);
+  }
+
+  function update(dt) {
+    // difficulty ramp
+    speed += dt * 5.2;
+    score += speed * dt * 0.06;
+
+    // milestone blip every 100
+    if (Math.floor(score / 100) > milestone) { milestone = Math.floor(score / 100); sPoint(); }
+
+    // gravity + variable jump height
+    player.vy += GRAV * dt;
+    if (player.vy < 0 && !holding) player.vy += GRAV * CUT * dt; // cut jump when released
+    player.y += player.vy * dt;
+    if (player.y >= GROUND_Y - player.h) {
+      if (!player.onGround) burst(player.x + player.w / 2, GROUND_Y, 8, "#7b8090", Math.PI * 0.7, -10);
+      player.y = GROUND_Y - player.h;
+      player.vy = 0; player.onGround = true;
+    }
+    player.runT += dt * (player.onGround ? speed * 0.06 : 0);
+
+    // jetpack particles while rising
+    if (!player.onGround && player.vy < 0) {
+      if (Math.random() < 0.8) burst(player.x + player.w * 0.5, player.y + player.h, 1, "#ff7a2d", 0.5, -40);
+    }
+
+    // spawn obstacles, gap shrinks with speed
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnObstacle();
+      const base = Math.max(0.62, 1.5 - speed * 0.004);
+      spawnTimer = base + Math.random() * 0.7;
+    }
+
+    // move obstacles + collide
+    const hb = playerHitbox();
+    for (const o of obstacles) {
+      o.x -= speed * dt;
+      const box = { x: o.x + o.cell, y: o.y + o.cell, w: o.w - o.cell * 2, h: o.h - o.cell * 2 };
+      if (overlap(hb, box)) { gameOver(); overAt = performance.now(); }
+    }
+    obstacles = obstacles.filter((o) => o.x + o.w > -4);
+
+    // particles
+    for (const p of particles) {
+      p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt;
+    }
+    particles = particles.filter((p) => p.t < p.life);
+  }
+
+  function currentSprite() {
+    if (state === STATE.OVER) return ASTRO_JUMP;
+    if (!player.onGround) return ASTRO_JUMP;
+    if (player.ducking) return ASTRO_DUCK;
+    return (Math.floor(player.runT / 6) % 2 === 0) ? ASTRO_RUN_A : ASTRO_RUN_B;
+  }
+
+  function render(dt, t) {
+    drawBackground(dt, t);
+    drawGround();
+
+    // particles (behind/around player)
+    for (const p of particles) {
+      const a = 1 - p.t / p.life;
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // obstacles
+    for (const o of obstacles) {
+      const bob = o.type === "sat" ? Math.sin((t + o.bob) * 3) * 2 : 0;
+      drawSprite(o.sprite, o.x, o.y + bob, o.cell);
+    }
+
+    // player (with soft glow)
+    const spr = currentSprite();
+    const drawY = player.ducking && player.onGround ? GROUND_Y - 16 * CELL : player.y;
+    ctx.save();
+    ctx.shadowColor = "rgba(35,224,255,0.5)";
+    ctx.shadowBlur = 6;
+    drawSprite(spr, player.x, drawY, CELL);
+    ctx.restore();
+
+    // HUD score
+    displayScore += (Math.floor(score) - displayScore) * Math.min(1, dt * 12);
+    el.score.textContent = Math.floor(displayScore);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------------
+  resize();
+  resetPlayer();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
