@@ -351,10 +351,11 @@
   // ---------------------------------------------------------------------------
   const CELL = 2;
   const player = { x: 40, y: 0, vy: 0, w: 14 * CELL, h: 18 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0, hover: false };
-  // A clean fixed jump (no charge-up); hold engages a simple hover.
-  const GRAV = 1150, JUMP_V = 560;
+  // A clean fixed jump (no charge-up); hold (after a short delay) engages hover.
+  const GRAV = 1150, JUMP_V = 800;
   // Jetpack hover + fuel
   const MAX_FUEL = 140;
+  const HOVER_DELAY = 0.24;        // must keep holding this long before jetpack kicks in
   const HOVER_ACC = GRAV * 1.18;   // gentle sustained lift while holding
   const HOVER_VMAX = 150;          // max rise speed while hovering
   const HOVER_DRAIN = 38;          // fuel/sec while hovering
@@ -566,7 +567,7 @@
   // ---------------------------------------------------------------------------
   // Input
   // ---------------------------------------------------------------------------
-  let holding = false, touchStartY = 0, swiped = false;
+  let holding = false, touchStartY = 0, swiped = false, holdTime = 0;
   function doJump() {
     if (player.onGround) {
       player.vy = -JUMP_V; player.onGround = false; player.ducking = false;
@@ -712,7 +713,9 @@
     if (Math.floor(score / 100) > milestone) { milestone = Math.floor(score / 100); sPoint(); }
 
     // physics: jetpack hover + gravity + fuel
-    const hovering = holding && !player.onGround && fuel > 0;
+    if (holding) holdTime += dt; else holdTime = 0;
+    // hover only engages after holding past the delay (so a tap stays a pure jump)
+    const hovering = holding && !player.onGround && fuel > 0 && holdTime > HOVER_DELAY;
     player.hover = hovering;
     if (hovering) {
       player.vy -= HOVER_ACC * dt;
