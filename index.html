@@ -352,8 +352,7 @@
   const CELL = 2;
   const player = { x: 40, y: 0, vy: 0, w: 14 * CELL, h: 18 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0, hover: false };
   // A clean fixed jump (no charge-up); hold (after a short delay) engages hover.
-  // Low space gravity = big, floaty, forgiving jumps that easily clear rocks.
-  const GRAV = 1000, JUMP_V = 800;
+  const GRAV = 1050, JUMP_V = 650;
   // Jetpack hover + fuel
   const MAX_FUEL = 140;
   const HOVER_DELAY = 0.24;        // must keep holding this long before jetpack kicks in
