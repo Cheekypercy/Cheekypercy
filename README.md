@@ -22,23 +22,36 @@ python3 -m http.server 8000
 | Action | Touch (phone) | Keyboard |
 | --- | --- | --- |
 | Jump | Tap anywhere | `Space` / `↑` / `W` |
-| Higher jump | Hold the tap | Hold the key |
+| Jetpack hover | Hold (uses fuel) | Hold the key |
 | Duck / fast-fall | Swipe down | `↓` / `S` |
 | Start / Retry | Tap the screen | Any jump key |
 
 - Jump over **asteroids**, duck under flying **satellites**.
-- The longer you survive, the **faster** it gets.
-- Your **high score** is saved on your device (`localStorage`).
+- **Hold to hover** with your jetpack — watch the little fuel bar above your head;
+  it drains while thrusting and refills on the ground.
+- Grab **weapon pickups** (BLASTER / PLASMA) — they **auto-fire at asteroids ahead**
+  so you can blast through instead of dodging, but ammo is limited.
+- Snag **star coins**, chain **near-miss combos**, and collect **power-ups**:
+  🛡️ shield, ⏳ slow-mo, ⏫ double-jump.
+- The world shifts **biome every 500m** (Deep Space → Mars → Ice World → Asteroid Belt → Toxic Nebula).
+- Unlock new **astronaut skins** as your best score climbs (cycle them on the start screen).
+- Your **high score** and unlocks are saved on your device (`localStorage`).
 - Tap **SND** (top-right) to mute/unmute the retro blips.
 
 ## ✨ Features
 
 - Crunchy pixel-art rendering (low-res buffer upscaled with `image-rendering: pixelated`).
-- Hand-drawn sprites: animated astronaut, asteroids, satellites.
-- Parallax twinkling starfield, drifting ringed planet, slowly shifting nebula.
-- Jetpack particle bursts, landing dust, CRT scanline overlay.
-- Variable jump height, ramping difficulty, Web Audio sound effects.
+- Hand-drawn sprites: animated astronaut, asteroids, satellites, pickups.
+- Jetpack hover with a regenerating fuel gauge.
+- Collectible weapons with limited ammo + smart auto-targeting.
+- Coins, near-miss combo multiplier, and three power-ups.
+- Five biomes that recolour the sky, ground, and asteroids every 500m.
+- Unlockable skins gated by best score.
+- Parallax starfield, drifting ringed planet, CRT scanlines, Web Audio SFX, and haptics.
 - Retro **Press Start 2P** HUD font.
+
+> Coming in Phase 2: mini-bosses & bosses every 1000m (escalating difficulty), with
+> power-ups and weapons doubling as combat tools.
 
 ## 🌐 Enable the phone link (one-time)
 

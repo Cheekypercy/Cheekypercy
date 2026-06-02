@@ -120,7 +120,7 @@
         <div class="subtitle">JUMP ASTEROIDS · DUCK SATELLITES<br/>GRAB STARS · CHAIN NEAR-MISSES</div>
         <button id="skinBtn" class="skinbtn">SKIN: CLASSIC<br/><span style="opacity:.6">TAP TO CHANGE</span></button>
         <div class="hint blink">TAP TO START</div>
-        <div class="hint" style="opacity:.6">HOLD = HIGHER JUMP · SWIPE DOWN = DUCK</div>
+        <div class="hint" style="opacity:.6">TAP = JUMP · HOLD = JETPACK HOVER<br/>SWIPE DOWN = DUCK · GRAB WEAPONS TO BLAST</div>
       </div>
 
       <div id="overPanel" class="panel hidden">
@@ -341,12 +341,19 @@
   // Player
   // ---------------------------------------------------------------------------
   const CELL = 2;
-  const player = { x: 38, y: 0, vy: 0, w: 12 * CELL, h: 16 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0 };
+  const player = { x: 38, y: 0, vy: 0, w: 12 * CELL, h: 16 * CELL, onGround: true, ducking: false, runT: 0, airJumps: 0, hover: false };
   const GRAV = 980, JUMP_V = 330, CUT = 0.42;
+  // Jetpack hover + fuel
+  const MAX_FUEL = 100;
+  const HOVER_ACC = GRAV * 1.25;   // upward thrust while hovering
+  const HOVER_VMAX = 120;          // max rise speed while hovering
+  const HOVER_DRAIN = 46;          // fuel/sec while hovering
+  const REGEN_GROUND = 64;         // fuel/sec refill on ground
+  const REGEN_AIR = 16;            // fuel/sec refill while airborne (not hovering)
 
   function resetPlayer() {
     player.y = GROUND_Y - player.h; player.vy = 0;
-    player.onGround = true; player.ducking = false; player.runT = 0; player.airJumps = 0;
+    player.onGround = true; player.ducking = false; player.runT = 0; player.airJumps = 0; player.hover = false;
   }
   function playerHitbox() {
     if (player.ducking && player.onGround) {
@@ -359,19 +366,41 @@
   // ---------------------------------------------------------------------------
   // Entities + effects
   // ---------------------------------------------------------------------------
-  let obstacles = [], coins = [], powerups = [], particles = [], floatTexts = [];
-  let spawnTimer = 0, coinTimer = 0, powerTimer = 0;
+  let obstacles = [], coins = [], powerups = [], weaponups = [], projectiles = [], particles = [], floatTexts = [];
+  let spawnTimer = 0, coinTimer = 0, powerTimer = 0, weaponTimer = 0;
+
+  // Weapons (collectible, limited ammo, auto-fire at targets ahead)
+  const WEAPONS = {
+    blaster: { name: "BLASTER", ammo: 16, interval: 0.26, projSpeed: 380, dmg: 1, color: "#39ff66", projW: 6, projH: 2 },
+    plasma:  { name: "PLASMA",  ammo: 9,  interval: 0.46, projSpeed: 300, dmg: 2, color: "#ff3df0", projW: 8, projH: 4 },
+  };
+  const WEAPON_KINDS = ["blaster", "plasma"];
 
   function spawnObstacle() {
     const flying = Math.random() < 0.30 && score > 120;
     if (flying) {
       const cell = 2, sz = spriteSize(SATELLITE, cell);
-      obstacles.push({ type: "sat", sprite: SATELLITE, cell, x: VW + 8, y: GROUND_Y - player.h - 4, w: sz.w, h: sz.h, bob: Math.random() * 6, minGap: Infinity, counted: false, hit: false });
+      obstacles.push({ type: "sat", sprite: SATELLITE, cell, x: VW + 8, y: GROUND_Y - player.h - 4, w: sz.w, h: sz.h, bob: Math.random() * 6, minGap: Infinity, counted: false, hit: false, hp: 2 });
     } else {
       const cell = Math.random() < 0.45 ? 3 : (Math.random() < 0.7 ? 4 : 5);
       const sz = spriteSize(ASTEROID, cell);
-      obstacles.push({ type: "rock", sprite: ASTEROID, cell, x: VW + 8, y: GROUND_Y - sz.h, w: sz.w, h: sz.h, bob: 0, minGap: Infinity, counted: false, hit: false });
+      obstacles.push({ type: "rock", sprite: ASTEROID, cell, x: VW + 8, y: GROUND_Y - sz.h, w: sz.w, h: sz.h, bob: 0, minGap: Infinity, counted: false, hit: false, hp: cell - 2 });
     }
+  }
+  function spawnWeapon() {
+    const kind = WEAPON_KINDS[Math.floor(Math.random() * WEAPON_KINDS.length)];
+    weaponups.push({ kind, x: VW + 8, y: GROUND_Y - player.h - (8 + Math.random() * 30), w: 13, h: 13, bob: Math.random() * 6, dead: false });
+  }
+  function drawWeaponPickup(o, t) {
+    const cx = Math.round(o.x + o.w / 2), cy = Math.round(o.y + o.h / 2 + Math.sin((t + o.bob) * 3) * 2);
+    const r = o.w / 2, col = WEAPONS[o.kind].color;
+    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(cx - 4, cy - 1, 6, 3);   // blaster body
+    ctx.fillRect(cx + 2, cy - 1, 4, 2);   // barrel
+    ctx.fillRect(cx - 3, cy + 2, 2, 2);   // grip
   }
   function spawnCoins() {
     const n = 4 + Math.floor(Math.random() * 3);
@@ -446,6 +475,7 @@
   let speed = 96;
   let combo = 0, comboTimer = 0;
   let shieldActive = false, slowTimer = 0, djumpTimer = 0, invulnTimer = 0;
+  let fuel = MAX_FUEL, weapon = null, fireCd = 0;
   let overAt = 0;
   let highScore = +(localStorage.getItem("cosmicDashHigh") || 0);
   let skinIndex = +(localStorage.getItem("cosmicDashSkin") || 0);
@@ -485,9 +515,10 @@
     score = 0; displayScore = 0; milestone = 0; speed = 96;
     combo = 0; comboTimer = 0;
     shieldActive = false; slowTimer = 0; djumpTimer = 0; invulnTimer = 0;
+    fuel = MAX_FUEL; weapon = null; fireCd = 0;
     biomeIndex = 0; curHue = BIOMES[0].hue;
-    obstacles = []; coins = []; powerups = []; particles = []; floatTexts = [];
-    spawnTimer = 0.6; coinTimer = 1.6; powerTimer = 9 + Math.random() * 6;
+    obstacles = []; coins = []; powerups = []; weaponups = []; projectiles = []; particles = []; floatTexts = [];
+    spawnTimer = 0.6; coinTimer = 1.6; powerTimer = 9 + Math.random() * 6; weaponTimer = 7 + Math.random() * 6;
     resetPlayer();
     el.start.classList.add("hidden"); el.over.classList.add("hidden");
     el.banner.classList.add("hidden");
@@ -620,6 +651,25 @@
     else { djumpTimer = 8; player.airJumps = Math.max(player.airJumps, player.onGround ? 0 : 1); }
   }
 
+  function equipWeapon(kind) {
+    const W = WEAPONS[kind];
+    weapon = { kind, ammo: W.ammo }; fireCd = 0;
+    sPower(); vibe(25);
+    floatText(W.name + "!", player.x + player.w / 2, player.y - 4, W.color);
+    showBanner(W.name + " x" + W.ammo, 1100);
+    burst(player.x + player.w / 2, player.y + player.h / 2, 16, W.color, Math.PI * 2, 0);
+  }
+  function fireWeapon() {
+    const W = WEAPONS[weapon.kind];
+    const baseY = (player.ducking && player.onGround) ? GROUND_Y - 9 * CELL : player.y;
+    const py = baseY + player.h * 0.4;
+    projectiles.push({ x: player.x + player.w, y: py, w: W.projW, h: W.projH, vx: W.projSpeed, dmg: W.dmg, color: W.color, dead: false });
+    weapon.ammo--;
+    beep(weapon.kind === "plasma" ? 320 : 760, 0.05, "square", 0.04);
+    burst(player.x + player.w, py + W.projH / 2, 3, W.color, 0.6, 0);
+    if (weapon.ammo <= 0) { weapon = null; showBanner("OUT OF AMMO", 800); }
+  }
+
   function nearMiss() {
     combo++; comboTimer = 1.6;
     const labels = ["NICE!", "COOL!", "SWEET!", "SLICK!", "WOW!", "RAD!", "INSANE!", "GODLIKE!"];
@@ -651,16 +701,24 @@
 
     if (Math.floor(score / 100) > milestone) { milestone = Math.floor(score / 100); sPoint(); }
 
-    // physics
+    // physics: jetpack hover + gravity + fuel
+    const hovering = holding && !player.onGround && fuel > 0;
+    player.hover = hovering;
+    if (hovering) {
+      player.vy -= HOVER_ACC * dt;
+      if (player.vy < -HOVER_VMAX) player.vy = -HOVER_VMAX;
+      fuel = Math.max(0, fuel - HOVER_DRAIN * dt);
+      if (Math.random() < 0.9) burst(player.x + player.w * 0.5, player.y + player.h, 1, Math.random() < 0.5 ? "#23e0ff" : "#ff7a2d", 0.7, -55);
+    }
     player.vy += GRAV * dt;
-    if (player.vy < 0 && !holding) player.vy += GRAV * CUT * dt;
+    if (player.vy < 0 && !holding) player.vy += GRAV * CUT * dt;   // quick tap = small hop
     player.y += player.vy * dt;
     if (player.y >= GROUND_Y - player.h) {
       if (!player.onGround) burst(player.x + player.w / 2, GROUND_Y, 8, "#7b8090", Math.PI * 0.7, -10);
       player.y = GROUND_Y - player.h; player.vy = 0; player.onGround = true;
     }
+    if (!hovering) fuel = Math.min(MAX_FUEL, fuel + (player.onGround ? REGEN_GROUND : REGEN_AIR) * dt);
     player.runT += dt * (player.onGround ? speed * 0.06 : 0);
-    if (!player.onGround && player.vy < 0 && Math.random() < 0.8) burst(player.x + player.w * 0.5, player.y + player.h, 1, "#ff7a2d", 0.5, -40);
 
     // spawns (real dt so slow-mo doesn't choke spawning)
     spawnTimer -= dt;
@@ -669,9 +727,37 @@
     if (coinTimer <= 0) { spawnCoins(); coinTimer = 1.8 + Math.random() * 2.6; }
     powerTimer -= dt;
     if (powerTimer <= 0) { spawnPowerup(); powerTimer = 12 + Math.random() * 10; }
+    weaponTimer -= dt;
+    if (weaponTimer <= 0) { spawnWeapon(); weaponTimer = 16 + Math.random() * 12; }
 
     const hb = playerHitbox();
     const invuln = invulnTimer > 0;
+
+    // auto-fire when armed and a target is ahead, then advance projectiles
+    if (weapon) {
+      fireCd -= dt;
+      const W = WEAPONS[weapon.kind];
+      const target = obstacles.some((o) => !o.hit && o.x > player.x && o.x < player.x + 260);
+      if (fireCd <= 0 && target) { fireWeapon(); fireCd = W.interval; }
+    }
+    for (const pr of projectiles) {
+      pr.x += pr.vx * dt;
+      for (const o of obstacles) {
+        if (o.hit) continue;
+        if (overlap({ x: pr.x, y: pr.y, w: pr.w, h: pr.h }, { x: o.x, y: o.y, w: o.w, h: o.h })) {
+          pr.dead = true; o.hp -= pr.dmg;
+          burst(pr.x + pr.w, pr.y, 4, pr.color, Math.PI, 0);
+          if (o.hp <= 0) {
+            o.hit = true; o.dead = true;
+            score += 15; floatText("+15", o.x + o.w / 2, o.y, pr.color);
+            burst(o.x + o.w / 2, o.y + o.h / 2, 14, o.type === "sat" ? "#c7ccd8" : "#9aa1b2", Math.PI * 2, 0);
+            beep(200, 0.12, "sawtooth", 0.05); vibe(15);
+          } else { beep(420, 0.04, "square", 0.03); }
+          break;
+        }
+      }
+    }
+    projectiles = projectiles.filter((pr) => !pr.dead && pr.x < VW + 8);
 
     // obstacles
     for (const o of obstacles) {
@@ -716,6 +802,13 @@
     }
     powerups = powerups.filter((p) => !p.dead && p.x + p.w > -4);
 
+    // weapon pickups
+    for (const wp of weaponups) {
+      wp.x -= wspeed * dt;
+      if (!wp.dead && overlap(hb, { x: wp.x, y: wp.y, w: wp.w, h: wp.h })) { wp.dead = true; equipWeapon(wp.kind); }
+    }
+    weaponups = weaponups.filter((wp) => !wp.dead && wp.x + wp.w > -4);
+
     // particles + floats
     for (const p of particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt; }
     particles = particles.filter((p) => p.t < p.life);
@@ -739,8 +832,9 @@
 
     // coins
     for (const c of coins) drawSprite(STAR, c.x, c.y + Math.sin((t + c.bob) * 4) * 1.5, 1);
-    // powerups
+    // powerups + weapon pickups
     for (const p of powerups) drawPowerup(p, t);
+    for (const wp of weaponups) drawWeaponPickup(wp, t);
 
     // particles
     for (const p of particles) {
@@ -756,15 +850,37 @@
       drawSprite(o.sprite, o.x, o.y + bob, o.cell, o.type === "rock" ? ro : null);
     }
 
+    // projectiles
+    for (const pr of projectiles) {
+      ctx.fillStyle = pr.color;
+      ctx.fillRect(Math.round(pr.x), Math.round(pr.y), pr.w, pr.h);
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillRect(Math.round(pr.x + pr.w - 2), Math.round(pr.y), 2, pr.h);
+    }
+
     // player
     const spr = currentSprite();
     const ovr = skinOverride(currentSkin());
     const drawY = (player.ducking && player.onGround) ? GROUND_Y - 16 * CELL : player.y;
+    // jetpack hover flame
+    if (player.hover) {
+      const fx = player.x + player.w / 2;
+      ctx.fillStyle = Math.random() < 0.5 ? "#ff7a2d" : "#ffd23d";
+      ctx.fillRect(Math.round(fx - 3), Math.round(drawY + player.h), 2, 3 + Math.random() * 3);
+      ctx.fillRect(Math.round(fx + 1), Math.round(drawY + player.h), 2, 3 + Math.random() * 3);
+    }
     const blink = invulnTimer > 0 && Math.floor(t * 20) % 2 === 0;
     if (!blink) {
       ctx.save(); ctx.shadowColor = ovr.v; ctx.shadowBlur = 6;
       drawSprite(spr, player.x, drawY, CELL, ovr);
       ctx.restore();
+    }
+    // fuel gauge above astronaut
+    if (state === STATE.PLAY && (fuel < MAX_FUEL || player.hover)) {
+      const bw = 18, bx = Math.round(player.x + player.w / 2 - bw / 2), by = Math.round(drawY - 6);
+      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(bx - 1, by - 1, bw + 2, 4);
+      ctx.fillStyle = (fuel / MAX_FUEL) > 0.3 ? "#23e0ff" : "#ff5a5a";
+      ctx.fillRect(bx, by, Math.max(0, Math.round(bw * (fuel / MAX_FUEL))), 2);
     }
     // shield bubble
     if (shieldActive) {
@@ -800,9 +916,11 @@
     let html = "";
     if (state === STATE.PLAY) {
       if (combo > 1 && comboTimer > 0) html += `<span class="chip" style="color:#ffe14d">COMBO x${combo}</span>`;
+      if (weapon) html += `<span class="chip" style="color:${WEAPONS[weapon.kind].color}">${WEAPONS[weapon.kind].name} ${weapon.ammo}</span>`;
       if (shieldActive) html += `<span class="chip" style="color:#5b8cff">SHIELD</span>`;
       if (slowTimer > 0) html += `<span class="chip" style="color:#23e0ff">SLOW ${slowTimer.toFixed(1)}</span>`;
       if (djumpTimer > 0) html += `<span class="chip" style="color:#ff7a2d">DBL ${djumpTimer.toFixed(1)}</span>`;
+      if (fuel < MAX_FUEL * 0.25 && !player.onGround) html += `<span class="chip" style="color:#ff5a5a">LOW FUEL</span>`;
     }
     if (html !== lastStatus) { el.status.innerHTML = html; lastStatus = html; }
   }
